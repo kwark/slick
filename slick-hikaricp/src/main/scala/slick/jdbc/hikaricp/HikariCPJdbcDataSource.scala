@@ -1,16 +1,66 @@
 package slick.jdbc.hikaricp
 
-import java.sql.{Driver, Connection}
+import java.sql.{Connection, Driver}
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
+
 import com.typesafe.config.Config
 import slick.SlickException
-import slick.jdbc.{JdbcDataSourceFactory, JdbcDataSource}
+import slick.jdbc.{JdbcDataSource, JdbcDataSourceFactory}
 import slick.util.ConfigExtensionMethods._
+import slick.util.Logging
 
 /** A JdbcDataSource for a HikariCP connection pool.
   * See `slick.jdbc.JdbcBackend#Database.forConfig` for documentation on the config parameters. */
-class HikariCPJdbcDataSource(val ds: com.zaxxer.hikari.HikariDataSource, val hconf: com.zaxxer.hikari.HikariConfig) extends JdbcDataSource {
-  def createConnection(): Connection = ds.getConnection()
+class HikariCPJdbcDataSource(val ds: com.zaxxer.hikari.HikariDataSource, val hconf: com.zaxxer.hikari.HikariConfig)
+  extends JdbcDataSource
+  with Logging {
+
+  private[this] val poolLock: ReentrantLock = new ReentrantLock()
+  private[this] val condition = poolLock.newCondition()
+  @volatile private[this] var count: Int = 0
+
+  def createConnection(): Connection = {
+    poolLock.lock()
+    try {
+      if (logger.isDebugEnabled) logger.debug("number of connections in use = "+count)
+      while (count == hconf.getMaximumPoolSize) {
+          condition.await()
+      }
+      val c = new DelegateConnection(ds.getConnection()) {
+        override def close(): Unit = {
+          closeConnection(conn)
+        }
+      }
+      count += 1
+      if (count == hconf.getMaximumPoolSize) {
+        logger.info("Maximum number of connections in use reached, pausing")
+        pause()
+      }
+      c
+    } finally {
+      poolLock.unlock()
+    }
+  }
+
+  private[this] def closeConnection(connection: Connection) = {
+    poolLock.lock()
+    try {
+      connection.close()
+      count -= 1
+      if (count == hconf.getMaximumPoolSize -1) {
+        logger.info("Connection freed below maximum, resuming")
+        condition.signal()
+        resume()
+      }
+    } finally {
+      poolLock.unlock()
+    }
+  }
+
+
   def close(): Unit = ds.close()
+
 }
 
 object HikariCPJdbcDataSource extends JdbcDataSourceFactory {

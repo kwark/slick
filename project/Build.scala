@@ -299,6 +299,7 @@ object SlickBuild extends Build {
         "-doc-source-url", "https://github.com/slick/slick/blob/"+v+"/slick-hikaricp/src/main€{FILE_PATH}.scala"
       )),
       libraryDependencies += Dependencies.hikariCP,
+      libraryDependencies ++= (Dependencies.logback +: Dependencies.testDBs).map(_ % "test"),
       test := (), testOnly := (), // suppress test status output
       OsgiKeys.exportPackage := Seq("slick.jdbc.hikaricp"),
       OsgiKeys.importPackage := Seq(

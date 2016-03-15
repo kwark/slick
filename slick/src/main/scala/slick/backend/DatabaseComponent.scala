@@ -1,10 +1,13 @@
 package slick.backend
 
-import java.util.concurrent.atomic.{AtomicReferenceArray, AtomicBoolean, AtomicLong}
+import slick.util.AsyncExecutor.{Priority, MediumPriority, LowPriority, HighPriority}
+
+import scala.language.existentials
+
+import java.util.concurrent.atomic.{AtomicReferenceArray, AtomicLong}
 
 import com.typesafe.config.Config
 
-import scala.collection.mutable.ArrayBuffer
 import scala.language.existentials
 
 import scala.concurrent.{Promise, ExecutionContext, Future}
@@ -228,7 +231,7 @@ trait DatabaseComponent { self =>
     protected[this] def runSynchronousDatabaseAction[R](a: SynchronousDatabaseAction[R, NoStream, This, _], ctx: Context, highPrio: Boolean): Future[R] = {
       val promise = Promise[R]()
       ctx.getEC(synchronousExecutionContext).prepare.execute(new AsyncExecutor.PrioritizedRunnable {
-        def highPriority = highPrio
+        def priority = ctx.priority(!highPrio)
         def run: Unit =
           try {
             ctx.sync
@@ -259,7 +262,7 @@ trait DatabaseComponent { self =>
       ctx.getEC(synchronousExecutionContext).prepare.execute(new AsyncExecutor.PrioritizedRunnable {
         private[this] def str(l: Long) = if(l != Long.MaxValue) l else if(GlobalConfig.unicodeDump) "\u221E" else "oo"
 
-        def highPriority = highPrio
+        def priority = ctx.priority(highPrio)
 
         def run: Unit = try {
           val debug = streamLogger.isDebugEnabled
@@ -365,6 +368,12 @@ trait DatabaseComponent { self =>
     @volatile private[DatabaseComponent] var sync = 0
 
     private[DatabaseComponent] var currentSession: Session = null
+
+    def priority(highPriority: Boolean): Priority = {
+      if (currentSession != null) HighPriority
+      else if (highPriority) MediumPriority
+      else LowPriority
+    }
 
     /** Used for the sequence counter in Action debug output. This variable is volatile because it
       * is only updated sequentially but not protected by a synchronous action context. */

@@ -8,12 +8,13 @@ import scala.util.control.NonFatal
 
 /** A connection pool for asynchronous execution of blocking I/O actions.
   * This is used for the asynchronous query execution API on top of blocking back-ends like JDBC. */
-trait AsyncExecutor extends Closeable {
+trait AsyncExecutor extends Closeable with Pausable {
   /** An ExecutionContext for running Futures. */
   def executionContext: ExecutionContext
   /** Shut the thread pool down and try to stop running computations. The thread pool is
     * transitioned into a state where it will not accept any new jobs. */
   def close(): Unit
+
 }
 
 object AsyncExecutor extends Logging {
@@ -29,6 +30,7 @@ object AsyncExecutor extends Logging {
       private[this] val state = new AtomicInteger(0)
 
       @volatile private[this] var executor: ThreadPoolExecutor = _
+      private[this] var pausable: Option[Pausable] = None
 
       lazy val executionContext = {
         if(!state.compareAndSet(0, 1))
@@ -37,12 +39,14 @@ object AsyncExecutor extends Logging {
           case 0 => new SynchronousQueue[Runnable]
           case -1 => new LinkedBlockingQueue[Runnable]
           case n =>
-            new ManagedArrayBlockingQueue[Runnable](n * 2) {
-              def accept(r: Runnable, size: Int) = r match {
-                case pr: PrioritizedRunnable if pr.highPriority => true
-                case _ => size < n
+            val q = new ManagedArrayBlockingQueue[Runnable](n) {
+              override protected[this] def priority(item: Runnable): Priority = item match {
+                case pr: PrioritizedRunnable => pr.priority
+                case _ => LowPriority
               }
             }
+            pausable = Option(q)
+            q
         }
         val tf = new DaemonThreadFactory(name + "-")
         executor = new ThreadPoolExecutor(numThreads, numThreads, 1, TimeUnit.MINUTES, queue, tf)
@@ -57,15 +61,24 @@ object AsyncExecutor extends Logging {
         if(!executor.awaitTermination(30, TimeUnit.SECONDS))
           logger.warn("Abandoning ThreadPoolExecutor (not yet destroyed after 30 seconds)")
       }
+
+      def pause() = pausable.foreach(_.pause())
+
+      def resume() = pausable.foreach(_.resume())
+
     }
   }
 
   def default(name: String = "AsyncExecutor.default"): AsyncExecutor =
     apply(name, 20, 1000)
 
+  sealed trait Priority
+  case object LowPriority extends Priority
+  case object MediumPriority extends Priority
+  case object HighPriority extends Priority
 
   trait PrioritizedRunnable extends Runnable {
-    def highPriority: Boolean
+    def priority: Priority
   }
 
   private class DaemonThreadFactory(namePrefix: String) extends ThreadFactory {
