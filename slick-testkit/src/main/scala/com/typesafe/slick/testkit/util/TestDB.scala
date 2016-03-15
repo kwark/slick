@@ -192,6 +192,9 @@ abstract class JdbcTestDB(val confName: String) extends SqlTestDB {
     val db = createSingleSessionDatabase(session, new AsyncExecutor {
       def executionContext: ExecutionContext = ec
       def close(): Unit = ()
+
+      override def pause(): Unit = ()
+      override def resume(): Unit = ()
     })
     db.run(f(ec)).value.get.get
   }
