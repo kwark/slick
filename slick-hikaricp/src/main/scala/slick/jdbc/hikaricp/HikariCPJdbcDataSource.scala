@@ -18,7 +18,7 @@ class HikariCPJdbcDataSource(val ds: com.zaxxer.hikari.HikariDataSource, val hco
 
   private[this] val poolLock: ReentrantLock = new ReentrantLock()
   private[this] val condition = poolLock.newCondition()
-  @volatile private[this] var count: Int = 0
+  private[this] var count: Int = 0
 
   def createConnection(): Connection = {
     poolLock.lock()
