@@ -1,6 +1,6 @@
 package slick
 
-import slick.jdbc.H2Profile.api._
+import slick.driver.H2Driver.api._
 import slick.lifted.ProvenShape
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -21,7 +21,7 @@ object SlickDeadlock extends App {
   val testTable: TableQuery[TestTable] = TableQuery[TestTable]
   Await.result(database.run(testTable.schema.create), 2.seconds)
 
-  val tasks = 1 to 50 map { i =>
+  val tasks = 1 to 100 map { i =>
     val action = { testTable += i }
       .flatMap { _ => testTable.length.result }
       .flatMap { _ => DBIO.successful(s"inserted value $i") }
