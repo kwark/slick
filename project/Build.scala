@@ -13,7 +13,7 @@ import de.johoop.testngplugin.TestNGPlugin._
 
 object SlickBuild extends Build {
 
-  val slickVersion = "3.1.1"
+  val slickVersion = "3.1.2-pp"
   val slickExtensionsVersion = "3.1.0" // Slick extensions version for links in the manual
   val binaryCompatSlickVersion = "3.1.0" // Slick base version for binary compatibility checks
   val scalaVersions = Seq("2.10.5", "2.11.6")
@@ -100,6 +100,7 @@ object SlickBuild extends Build {
     organization := "com.typesafe.slick",
     resolvers += Resolver.sonatypeRepo("snapshots"),
     scalacOptions ++= List("-deprecation", "-feature"),
+    isSnapshot := true,
     scalacOptions in (Compile, doc) <++= (version,sourceDirectory in Compile,name).map((v,src,n) => Seq(
       "-doc-title", n,
       "-doc-version", v,
@@ -114,7 +115,7 @@ object SlickBuild extends Build {
     repoKind <<= (version)(v => if(v.trim.endsWith("SNAPSHOT")) "snapshots" else "releases"),
     publishTo <<= (repoKind){
       case "snapshots" => Some("snapshots" at "https://oss.sonatype.org/content/repositories/snapshots")
-      case "releases" =>  Some("releases"  at "https://oss.sonatype.org/service/local/staging/deploy/maven2")
+      case "releases" =>  Some("releases"  at "https://collab.mow.vlaanderen.be/nexus/content/repositories/releases")
     },
     publishMavenStyle := true,
     publishArtifact in Test := false,
