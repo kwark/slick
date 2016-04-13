@@ -231,7 +231,7 @@ trait DatabaseComponent { self =>
     protected[this] def runSynchronousDatabaseAction[R](a: SynchronousDatabaseAction[R, NoStream, This, _], ctx: Context, highPrio: Boolean): Future[R] = {
       val promise = Promise[R]()
       ctx.getEC(synchronousExecutionContext).prepare.execute(new AsyncExecutor.PrioritizedRunnable {
-        def priority = ctx.priority(!highPrio)
+        def priority = ctx.priority(highPrio)
         def run: Unit =
           try {
             ctx.sync
@@ -243,7 +243,10 @@ trait DatabaseComponent { self =>
               }
               releaseSession(ctx, false)
               res
-            } finally { ctx.sync = 0 }
+            } finally {
+              if (!ctx.isPinned) connectionReleased = true
+              ctx.sync = 0
+            }
             promise.success(res)
           } catch { case NonFatal(ex) => promise.tryFailure(ex) }
       })
@@ -297,6 +300,7 @@ trait DatabaseComponent { self =>
               throw ex
             } finally {
               ctx.streamState = state
+              if (!ctx.isPinned) connectionReleased = true
               ctx.sync = 0
             }
             if(debug) {

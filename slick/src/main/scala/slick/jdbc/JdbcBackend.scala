@@ -44,8 +44,6 @@ trait JdbcBackend extends RelationalBackend {
     @volatile
     protected[JdbcBackend] var capabilities: DatabaseCapabilities = null
 
-    source.registerPausable(executor)
-
     def createSession(): Session = new BaseSession(this)
 
     /** Like `stream(StreamingAction)` but you can disable pre-buffering of the next row by setting
@@ -407,17 +405,11 @@ trait JdbcBackend extends RelationalBackend {
   }
 
   class BaseSession(val database: Database) extends SessionDef {
-    protected var open = false
     protected var inTransactionally = 0
 
-    def isOpen = open
     def isInTransaction = inTransactionally > 0
 
-    lazy val conn = {
-      val c = database.source.createConnection
-      open = true
-      c
-    }
+    val conn = database.source.createConnection
 
     lazy val metaData = conn.getMetaData()
 
@@ -431,9 +423,7 @@ trait JdbcBackend extends RelationalBackend {
       }
     }
 
-    def close() {
-      if(open) conn.close()
-    }
+    def close() { conn.close() }
 
     private[slick] def startInTransaction: Unit = {
       if(!isInTransaction) conn.setAutoCommit(false)

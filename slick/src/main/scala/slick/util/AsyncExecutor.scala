@@ -1,14 +1,14 @@
 package slick.util
 
 import java.io.Closeable
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent._
-import scala.concurrent.{Promise, Future, ExecutionContext}
-import scala.util.control.NonFatal
+import java.util.concurrent.atomic.AtomicInteger
+
+import scala.concurrent.ExecutionContext
 
 /** A connection pool for asynchronous execution of blocking I/O actions.
   * This is used for the asynchronous query execution API on top of blocking back-ends like JDBC. */
-trait AsyncExecutor extends Closeable with Pausable {
+trait AsyncExecutor extends Closeable {
   /** An ExecutionContext for running Futures. */
   def executionContext: ExecutionContext
   /** Shut the thread pool down and try to stop running computations. The thread pool is
@@ -30,26 +30,50 @@ object AsyncExecutor extends Logging {
       private[this] val state = new AtomicInteger(0)
 
       @volatile private[this] var executor: ThreadPoolExecutor = _
-      private[this] var pausable: Option[Pausable] = None
 
       lazy val executionContext = {
         if(!state.compareAndSet(0, 1))
           throw new IllegalStateException("Cannot initialize ExecutionContext; AsyncExecutor already shut down")
-        val queue = queueSize match {
+        val queue: BlockingQueue[Runnable] = queueSize match {
           case 0 => new SynchronousQueue[Runnable]
           case -1 => new LinkedBlockingQueue[Runnable]
           case n =>
-            val q = new ManagedArrayBlockingQueue[Runnable](n) {
+            new ManagedArrayBlockingQueue[Runnable](numThreads * 5, n) {
               override protected[this] def priority(item: Runnable): Priority = item match {
                 case pr: PrioritizedRunnable => pr.priority
                 case _ => LowPriority
               }
             }
-            pausable = Option(q)
-            q
         }
         val tf = new DaemonThreadFactory(name + "-")
-        executor = new ThreadPoolExecutor(numThreads, numThreads, 1, TimeUnit.MINUTES, queue, tf)
+        executor = new ThreadPoolExecutor(numThreads, numThreads, 1, TimeUnit.MINUTES, queue, tf) {
+
+          /**
+            * If the runnable/task is a low/medium priority item, we increase the items in use count, because first thing it will do
+            * is open a Jdbc connection from the pool.
+            */
+          override def beforeExecute(t: Thread, r: Runnable): Unit = {
+            (r, queue) match {
+              case (pr: PrioritizedRunnable, q: ManagedArrayBlockingQueue[Runnable]) if pr.priority != HighPriority => q.increaseInUseCount()
+              case _ =>
+            }
+            super.beforeExecute(t, r)
+          }
+
+          /**
+            * If the runnable/task has released the Jdbc connection we decrease the counter again
+            */
+          override def afterExecute(r: Runnable, t: Throwable): Unit = {
+            super.afterExecute(r, t)
+            (r, queue) match {
+              case (pr: PrioritizedRunnable, q: ManagedArrayBlockingQueue[Runnable]) =>
+                if (pr.connectionReleased) q.decreaseInUseCount()
+                q.resetInUseCountThreadLocal()
+              case _ =>
+            }
+          }
+
+        }
         if(!state.compareAndSet(1, 2)) {
           executor.shutdownNow()
           throw new IllegalStateException("Cannot initialize ExecutionContext; AsyncExecutor shut down during initialization")
@@ -62,10 +86,6 @@ object AsyncExecutor extends Logging {
           logger.warn("Abandoning ThreadPoolExecutor (not yet destroyed after 30 seconds)")
       }
 
-      def pause() = pausable.foreach(_.pause())
-
-      def resume() = pausable.foreach(_.resume())
-
     }
   }
 
@@ -77,8 +97,11 @@ object AsyncExecutor extends Logging {
   case object MediumPriority extends Priority
   case object HighPriority extends Priority
 
+
+
   trait PrioritizedRunnable extends Runnable {
     def priority: Priority
+    @volatile var connectionReleased = false
   }
 
   private class DaemonThreadFactory(namePrefix: String) extends ThreadFactory {

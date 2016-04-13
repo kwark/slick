@@ -16,15 +16,6 @@ import slick.SlickException
   * part of the backend cake. This trait defines the SPI for 3rd-party connection pool support. */
 trait JdbcDataSource extends Closeable {
 
-  var pausable: Option[Pausable] = None
-
-  def registerPausable(p: Pausable) = {
-    pausable = Option(p)
-  }
-
-  def pause(): Unit = pausable.foreach(_.pause())
-  def resume(): Unit = pausable.foreach(_.resume())
-
   /** Create a new Connection or get one from the pool */
   def createConnection(): Connection
 

@@ -1,19 +1,20 @@
 package slick.util
 
-import java.util.concurrent.{TimeUnit, BlockingQueue}
+import java.util.concurrent.{BlockingQueue, TimeUnit}
 import java.util.concurrent.locks._
 import java.util
+import java.util.function.Supplier
 
-import slick.util.AsyncExecutor.{LowPriority, MediumPriority, HighPriority, Priority}
+import slick.util.AsyncExecutor.{HighPriority, LowPriority, MediumPriority, Priority}
 
 /** A simplified copy of `java.util.concurrent.ArrayBlockingQueue` with additional logic for
   * temporarily rejecting elements based on the current size. All features of the original
   * ArrayBlockingQueue have been ported, except the mutation methods of the iterator. See
   * `java.util.concurrent.ArrayBlockingQueue` for documentation. */
-abstract class ManagedArrayBlockingQueue[E >: Null <: AnyRef](capacity: Int, fair: Boolean = false)
+abstract class ManagedArrayBlockingQueue[E >: Null <: AnyRef](maximumInUse: Int, capacity: Int, fair: Boolean = false)
   extends util.AbstractQueue[E]
   with BlockingQueue[E]
-  with Pausable { self =>
+  with Logging { self =>
 
   protected[this] def priority(item: E): Priority
 
@@ -28,20 +29,52 @@ abstract class ManagedArrayBlockingQueue[E >: Null <: AnyRef](capacity: Int, fai
 
   private[this] def counts = (if (paused) 0 else  itemQueue.count) + highPrioItemQueue.count
 
-  private[this] var paused = false
+  /**
+    * The number of low/medium priority items in use
+    */
+  private[this] var inUseCount = 0
 
   /**
-    * Pausing causes only HighPriority items to be processed
+    * Because the connection in use count can be incremented from two call sites (but always by the threadpool's worker thread)
+    * we protect it by an ThreadLocal, so it will only get incremented once
     */
-  def pause() = {
-    locked { paused = true }
+  private[this] val inUseCountThreadLocal = ThreadLocal.withInitial(new Supplier[Boolean] {
+    override def get(): Boolean = false
+  })
+
+  private[this] var paused = false
+
+  private[util] def increaseInUseCount(): Unit = {
+    if (!inUseCountThreadLocal.get()) {
+      locked {
+        require(inUseCount < maximumInUse, "count cannot be increased")
+        inUseCount += 1
+        inUseCountThreadLocal.set(true)
+        if (inUseCount == maximumInUse) {
+          logger.debug("pausing")
+          paused = true
+        }
+      }
+    }
   }
 
   /**
-    * Resuming switches back to processing all items
+    * This must always be called in afterExecute by the threadpool's worker thread
     */
-  def resume() = {
-    locked { paused = false }
+  private[util] def resetInUseCountThreadLocal(): Unit = {
+    inUseCountThreadLocal.set(false)
+  }
+
+  private[util] def decreaseInUseCount(): Unit = {
+    locked {
+      require(inUseCount > 0, "count cannot be decreased")
+      inUseCount -= 1
+      if (inUseCount == maximumInUse - 1) {
+        logger.debug("resuming")
+        paused = false
+        if (counts > 0) notEmpty.signalAll()
+      }
+    }
   }
 
   def offer(e: E): Boolean = {
@@ -55,7 +88,7 @@ abstract class ManagedArrayBlockingQueue[E >: Null <: AnyRef](capacity: Int, fai
       case MediumPriority => itemQueue.insert(e)
       case LowPriority => if (itemQueue.count < capacity) itemQueue.insert(e) else false
     }
-    if (r) notEmpty.signal()
+    if (counts > 0) notEmpty.signal()
     r
   }
 
@@ -82,9 +115,12 @@ abstract class ManagedArrayBlockingQueue[E >: Null <: AnyRef](capacity: Int, fai
 
   def poll: E = locked { extract() }
 
-  private[this] def extract() = {
+  private[this] def extract(): E = {
     if (highPrioItemQueue.count != 0) highPrioItemQueue.extract
-    else if (!paused && itemQueue.count != 0) itemQueue.extract
+    else if (!paused && itemQueue.count != 0) {
+      increaseInUseCount()
+      itemQueue.extract
+    }
     else null
   }
 
@@ -128,8 +164,7 @@ abstract class ManagedArrayBlockingQueue[E >: Null <: AnyRef](capacity: Int, fai
 
   override def contains(o: AnyRef): Boolean = {
     locked {
-      if (itemQueue.contains(o)) true
-      else highPrioItemQueue.contains(o)
+      itemQueue.contains(o) || highPrioItemQueue.contains(o)
     }
   }
 
@@ -170,10 +205,12 @@ abstract class ManagedArrayBlockingQueue[E >: Null <: AnyRef](capacity: Int, fai
     private val iterators = Array(highPrioItemQueue.iterator, itemQueue.iterator)
 
     override def hasNext: Boolean = {
-      while (current < iterators.length && !iterators(current).hasNext)
-        current = current + 1
+      locked {
+        while (current < iterators.length && !iterators(current).hasNext)
+          current = current + 1
 
-      current < iterators.length
+        current < iterators.length
+      }
     }
 
     def next: E = {
