@@ -67,7 +67,7 @@ object AsyncExecutor extends Logging {
             super.afterExecute(r, t)
             (r, queue) match {
               case (pr: PrioritizedRunnable, q: ManagedArrayBlockingQueue[Runnable]) =>
-                if (pr.connectionReleased) q.decreaseInUseCount()
+                if (pr.connectionReleased && pr.priority != HighPriority) q.decreaseInUseCount()
                 q.resetInUseCountThreadLocal()
               case _ =>
             }
