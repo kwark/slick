@@ -266,7 +266,8 @@ trait JdbcBackend extends RelationalBackend {
                   classLoader: ClassLoader = ClassLoaderUtil.defaultClassLoader): Database = {
       val usedConfig = if(path.isEmpty) config else config.getConfig(path)
       val source = JdbcDataSource.forConfig(usedConfig, driver, path, classLoader)
-      val executor = AsyncExecutor(path, usedConfig.getIntOr("numThreads", 20), usedConfig.getIntOr("queueSize", 1000))
+      val executor = AsyncExecutor(path, usedConfig.getIntOr("numThreads", 20), usedConfig.getIntOr("queueSize", 1000),
+        source.maxConnections.fold(100)(identity))
       forSource(source, executor)
     }
   }

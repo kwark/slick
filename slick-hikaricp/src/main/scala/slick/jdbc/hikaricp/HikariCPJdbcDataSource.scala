@@ -11,6 +11,7 @@ import slick.util.ConfigExtensionMethods._
 class HikariCPJdbcDataSource(val ds: com.zaxxer.hikari.HikariDataSource, val hconf: com.zaxxer.hikari.HikariConfig) extends JdbcDataSource {
   def createConnection(): Connection = ds.getConnection()
   def close(): Unit = ds.close()
+  override val maxConnections = Some(ds.getMaximumPoolSize)
 }
 
 object HikariCPJdbcDataSource extends JdbcDataSourceFactory {
