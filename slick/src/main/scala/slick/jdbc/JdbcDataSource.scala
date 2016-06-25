@@ -23,7 +23,7 @@ trait JdbcDataSource extends Closeable {
     * Otherwise no action is taken. */
   def close(): Unit
 
-  def maxConnections: Option[Int] = None
+  val maxConnections: Option[Int] = None
 
 }
 

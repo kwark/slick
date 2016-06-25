@@ -1,9 +1,10 @@
 package slick.test.jdbc
 
-import java.sql.{SQLException, DriverPropertyInfo, Connection, Driver}
+import java.sql.{Connection, Driver, DriverPropertyInfo, SQLException}
 import java.util.Properties
 import java.util.logging.Logger
 
+import com.typesafe.config.ConfigFactory
 import org.junit.Test
 import org.junit.Assert._
 import slick.backend.DatabaseConfig
@@ -43,6 +44,54 @@ class DataSourceTest {
       assertEquals("bar", info.getProperty("foo"))
     } finally db.close
   }
+
+  @Test def testMaxConnections: Unit = {
+    MockDriver.reset
+    val db = JdbcBackend.Database.forConfig("databaseUrl", ConfigFactory.parseString(
+      """
+         |databaseUrl {
+         |  dataSourceClass = "slick.jdbc.DatabaseUrlDataSource"
+         |  maxConnections = 20
+         |  url = "postgres://user:pass@host/dbname"
+         |}
+         |""".stripMargin))
+    try {
+      assertEquals("maxConnections should be respected", Some(20), db.source.maxConnections)
+    } finally db.close
+  }
+
+  @Test def testMaxConnectionsNumThreads: Unit = {
+    MockDriver.reset
+    val db = JdbcBackend.Database.forConfig("databaseUrl", ConfigFactory.parseString(
+      """
+        |databaseUrl {
+        |  dataSourceClass = "slick.jdbc.DatabaseUrlDataSource"
+        |  numThreads = 10
+        |  url = "postgres://user:pass@host/dbname"
+        |}
+        |""".stripMargin
+    ))
+    try {
+      assertEquals("maxConnections should be numThreads * 5", Some(50), db.source.maxConnections)
+    } finally db.close
+  }
+
+  @Test def testConnectionPoolDisabled: Unit = {
+    MockDriver.reset
+    val db = JdbcBackend.Database.forConfig("databaseUrl", ConfigFactory.parseString(
+      """
+        |databaseUrl {
+        |  dataSourceClass = "slick.jdbc.DatabaseUrlDataSource"
+        |  connectionPool = "disabled"
+        |  url = "postgres://user:pass@host/dbname"
+        |}
+        |
+      """.stripMargin))
+    try {
+      assertEquals("maxConnections should be None when not using a pool", None, db.source.maxConnections)
+    } finally db.close
+  }
+
 }
 
 object MockDriver {

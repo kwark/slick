@@ -18,20 +18,28 @@ trait AsyncExecutor extends Closeable {
 }
 
 object AsyncExecutor extends Logging {
-
-  def apply(name: String, numThreads: Int, queueSize: Int): AsyncExecutor =
-    this(name, numThreads, queueSize, 100)
-
-    /** Create an [[AsyncExecutor]] with a thread pool suitable for blocking
+  /** Create an [[AsyncExecutor]] with a thread pool suitable for blocking
     * I/O. New threads are created as daemon threads.
     *
     * @param name A prefix to use for the names of the created threads.
     * @param numThreads The number of threads in the pool.
     * @param queueSize The size of the job queue, 0 for direct hand-off or -1 for unlimited size.
-    * @param maxConnections The maximum number of connections in the pool, the underlying ThreadPoolExecutor will not pick up any more work
-    *                       when all connections are in use. It will resume as soon as a connection is released again to the pool
     */
-  def apply(name: String, numThreads: Int, queueSize: Int, maxConnections: Int): AsyncExecutor = {
+  def apply(name: String, numThreads: Int, queueSize: Int): AsyncExecutor =
+    this(name, numThreads, queueSize)
+
+  /** Create an [[AsyncExecutor]] with a thread pool suitable for blocking
+    * I/O. New threads are created as daemon threads.
+    *
+    * @param name A prefix to use for the names of the created threads.
+    * @param numThreads The number of threads in the pool.
+    * @param queueSize The size of the job queue, 0 for direct hand-off or -1 for unlimited size.
+    * @param maxConnections The maximum number of configured connections for the connection pool.
+    *                       The underlying ThreadPoolExecutor will not pick up any more work when all connections are in use.
+    *                       It will resume as soon as a connection is released again to the pool
+    *                       Default is Integer.MAX_VALUE which is only ever a good choice when not using connection pooling
+    */
+  def apply(name: String, numThreads: Int, queueSize: Int, maxConnections: Int = Integer.MAX_VALUE): AsyncExecutor = {
     new AsyncExecutor {
       // Before init: 0, during init: 1, after init: 2, during/after shutdown: 3
       private[this] val state = new AtomicInteger(0)
