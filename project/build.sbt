@@ -12,6 +12,8 @@ addSbtPlugin("com.typesafe" % "sbt-sdlc" % "0.1")
 
 addSbtPlugin("de.johoop" % "sbt-testng-plugin" % "3.0.2")
 
+addSbtPlugin("me.lessis" % "bintray-sbt" % "0.3.0")
+
 resolvers += Resolver.url("fix-sbt-plugin-releases", url("https://dl.bintray.com/sbt/sbt-plugin-releases"))(Resolver.ivyStylePatterns)
 
 credentials += Credentials(Path.userHome / ".ivy2" / ".credentials")

@@ -10,10 +10,11 @@ import com.typesafe.tools.mima.core.{ProblemFilters, MissingClassProblem}
 import com.typesafe.sbt.osgi.SbtOsgi.{osgiSettings, OsgiKeys}
 import com.typesafe.sbt.sdlc.Plugin._
 import de.johoop.testngplugin.TestNGPlugin._
+import bintray.BintrayKeys._
 
 object SlickBuild extends Build {
 
-  val slickVersion = "3.1.2-pp3"
+  val slickVersion = "3.1.1-pp"
   val slickExtensionsVersion = "3.1.0" // Slick extensions version for links in the manual
   val binaryCompatSlickVersion = "3.1.0" // Slick base version for binary compatibility checks
   val scalaVersions = Seq("2.10.5", "2.11.6")
@@ -94,13 +95,24 @@ object SlickBuild extends Build {
     }
   }
 
+  lazy val bintrayPublishing = Seq(
+    bintrayPackageLabels := Seq("slick", "deadlock", "scala"),
+    bintrayVcsUrl := Some("https://github.com/kwark/slick")
+  )
+
+  lazy val noPublishing = Seq(
+    publish := {},
+    publishLocal := {},
+    publishArtifact := false
+  )
+
   lazy val sharedSettings = Seq(
     version := slickVersion,
     organizationName := "Typesafe",
-    organization := "com.typesafe.slick",
+    organization := "be.venneborg.slick",
     resolvers += Resolver.sonatypeRepo("snapshots"),
     scalacOptions ++= List("-deprecation", "-feature"),
-    isSnapshot := true,
+    isSnapshot := false,
     scalacOptions in (Compile, doc) <++= (version,sourceDirectory in Compile,name).map((v,src,n) => Seq(
       "-doc-title", n,
       "-doc-version", v,
@@ -113,17 +125,13 @@ object SlickBuild extends Build {
     )),
     logBuffered := false,
     repoKind <<= (version)(v => if(v.trim.endsWith("SNAPSHOT")) "snapshots" else "releases"),
-    publishTo <<= (repoKind){
-      case "snapshots" => Some("snapshots" at "https://oss.sonatype.org/content/repositories/snapshots")
-      case "releases" =>  Some("releases"  at "https://collab.mow.vlaanderen.be/nexus/content/repositories/releases")
-    },
     publishMavenStyle := true,
     publishArtifact in Test := false,
     pomIncludeRepository := { _ => false },
     makePomConfiguration ~= { _.copy(configurations = Some(Seq(Compile, Runtime, Optional))) },
     homepage := Some(url("http://slick.typesafe.com")),
     startYear := Some(2008),
-    licenses += ("Two-clause BSD-style license", url("http://github.com/slick/slick/blob/master/LICENSE.txt")),
+    licenses += ("BSD", url("http://github.com/slick/slick/blob/master/LICENSE.txt")),
     pomExtra :=
       <developers>
         <developer>
@@ -176,7 +184,7 @@ object SlickBuild extends Build {
 
   /* Project Definitions */
   lazy val aRootProject: Project = Project(id = "root", base = file("."),
-    settings = Defaults.coreDefaultSettings ++ sharedSettings ++ extTarget("root") ++ Seq(
+    settings = Defaults.coreDefaultSettings ++ sharedSettings ++ noPublishing ++ extTarget("root") ++ Seq(
       sourceDirectory := file("target/root-src"),
       publishArtifact := false,
       test := (), testOnly :=  (), // suppress test status output
@@ -186,7 +194,7 @@ object SlickBuild extends Build {
     )).aggregate(slickProject, slickCodegenProject, slickHikariCPProject, slickTestkitProject)
 
   lazy val slickProject: Project = Project(id = "slick", base = file("slick"),
-    settings = Defaults.coreDefaultSettings ++ sdlcSettings ++ inConfig(config("macro"))(Defaults.configSettings) ++ sharedSettings ++ fmppSettings ++ site.settings ++ site.sphinxSupport() ++ mimaDefaultSettings ++ extTarget("slick") ++ commonSdlcSettings ++ osgiSettings ++ Seq(
+    settings = Defaults.coreDefaultSettings ++ sdlcSettings ++ inConfig(config("macro"))(Defaults.configSettings) ++ sharedSettings ++ bintrayPublishing ++ fmppSettings ++ site.settings ++ site.sphinxSupport() ++ mimaDefaultSettings ++ extTarget("slick") ++ commonSdlcSettings ++ osgiSettings ++ Seq(
       name := "Slick",
       description := "Scala Language-Integrated Connection Kit",
       libraryDependencies ++= Dependencies.mainDependencies,
@@ -239,7 +247,7 @@ object SlickBuild extends Build {
   val testKitTestCodegenDependencies = Dependencies.logback +: Dependencies.testDBs
 
   lazy val slickTestkitProject = Project(id = "testkit", base = file("slick-testkit"),
-    settings = Defaults.coreDefaultSettings ++ typeProvidersSettings ++ sharedSettings ++ extTarget("testkit") ++ Seq(
+    settings = Defaults.coreDefaultSettings ++ typeProvidersSettings ++ sharedSettings ++ noPublishing ++ extTarget("testkit") ++ Seq(
       name := "Slick-TestKit",
       description := "Test Kit for Slick (Scala Language-Integrated Connection Kit)",
       scalacOptions in (Compile, doc) <++= version.map(v => Seq(
@@ -281,7 +289,7 @@ object SlickBuild extends Build {
   ) dependsOn(slickProject, slickCodegenProject % "compile->compile", slickHikariCPProject % "test->compile")
 
   lazy val slickCodegenProject = Project(id = "codegen", base = file("slick-codegen"),
-    settings = Defaults.coreDefaultSettings ++ sdlcSettings ++ sharedSettings ++ extTarget("codegen") ++ commonSdlcSettings ++ Seq(
+    settings = Defaults.coreDefaultSettings ++ sdlcSettings ++ sharedSettings ++ bintrayPublishing ++ extTarget("codegen") ++ commonSdlcSettings ++ Seq(
       name := "Slick-CodeGen",
       description := "Code Generator for Slick (Scala Language-Integrated Connection Kit)",
       scalacOptions in (Compile, doc) <++= version.map(v => Seq(
@@ -293,7 +301,7 @@ object SlickBuild extends Build {
   ) dependsOn(slickProject)
 
   lazy val slickHikariCPProject = Project(id = "hikaricp", base = file("slick-hikaricp"),
-    settings = Defaults.coreDefaultSettings ++ sdlcSettings ++ sharedSettings ++ extTarget("hikaricp") ++ commonSdlcSettings ++ osgiSettings ++ Seq(
+    settings = Defaults.coreDefaultSettings ++ sdlcSettings ++ sharedSettings ++ bintrayPublishing ++ extTarget("hikaricp") ++ commonSdlcSettings ++ osgiSettings ++ Seq(
       name := "Slick-HikariCP",
       description := "HikariCP integration for Slick (Scala Language-Integrated Connection Kit)",
       scalacOptions in (Compile, doc) <++= version.map(v => Seq(
@@ -313,7 +321,7 @@ object SlickBuild extends Build {
   ) dependsOn(slickProject)
 
   lazy val reactiveStreamsTestProject = Project(id = "reactive-streams-tests", base = file("reactive-streams-tests"),
-    settings = Defaults.coreDefaultSettings ++ sharedSettings ++ testNGSettings ++ Seq(
+    settings = Defaults.coreDefaultSettings ++ sharedSettings ++ testNGSettings ++ noPublishing ++ Seq(
       name := "Slick-ReactiveStreamsTests",
       unmanagedResourceDirectories in Test += (baseDirectory in aRootProject).value / "common-test-resources",
       resolvers += Resolver.sbtPluginRepo("releases"),
