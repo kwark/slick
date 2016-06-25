@@ -14,7 +14,7 @@ import bintray.BintrayKeys._
 
 object SlickBuild extends Build {
 
-  val slickVersion = "3.1.1-pp"
+  val slickVersion = "3.1.1.1"
   val slickExtensionsVersion = "3.1.0" // Slick extensions version for links in the manual
   val binaryCompatSlickVersion = "3.1.0" // Slick base version for binary compatibility checks
   val scalaVersions = Seq("2.10.5", "2.11.6")
@@ -109,7 +109,7 @@ object SlickBuild extends Build {
   lazy val sharedSettings = Seq(
     version := slickVersion,
     organizationName := "Typesafe",
-    organization := "be.venneborg.slick",
+    organization := "com.typesafe.slick",
     resolvers += Resolver.sonatypeRepo("snapshots"),
     scalacOptions ++= List("-deprecation", "-feature"),
     isSnapshot := false,
