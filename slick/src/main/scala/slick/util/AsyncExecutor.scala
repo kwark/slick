@@ -26,7 +26,7 @@ object AsyncExecutor extends Logging {
     * @param queueSize The size of the job queue, 0 for direct hand-off or -1 for unlimited size.
     */
   def apply(name: String, numThreads: Int, queueSize: Int): AsyncExecutor =
-    this(name, numThreads, queueSize)
+    this(name, numThreads, queueSize, Integer.MAX_VALUE)
 
   /** Create an [[AsyncExecutor]] with a thread pool suitable for blocking
     * I/O. New threads are created as daemon threads.
@@ -39,7 +39,7 @@ object AsyncExecutor extends Logging {
     *                       It will resume as soon as a connection is released again to the pool
     *                       Default is Integer.MAX_VALUE which is only ever a good choice when not using connection pooling
     */
-  def apply(name: String, numThreads: Int, queueSize: Int, maxConnections: Int = Integer.MAX_VALUE): AsyncExecutor = {
+  def apply(name: String, numThreads: Int, queueSize: Int, maxConnections: Int): AsyncExecutor = {
     new AsyncExecutor {
       // Before init: 0, during init: 1, after init: 2, during/after shutdown: 3
       private[this] val state = new AtomicInteger(0)
