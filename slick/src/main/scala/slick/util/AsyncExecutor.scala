@@ -26,7 +26,7 @@ object AsyncExecutor extends Logging {
     * @param queueSize The size of the job queue, 0 for direct hand-off or -1 for unlimited size.
     */
   def apply(name: String, numThreads: Int, queueSize: Int): AsyncExecutor =
-    this(name, numThreads, queueSize, Integer.MAX_VALUE)
+    this(name, numThreads, queueSize, numThreads * 5)
 
   /** Create an [[AsyncExecutor]] with a thread pool suitable for blocking
     * I/O. New threads are created as daemon threads.
