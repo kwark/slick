@@ -14,10 +14,10 @@ resolvers ++= Seq(Resolver.bintrayRepo("kwark", "maven"))
 and add also add/modify your dependencies to the patched version:
 
 ```scala
-"com.typesafe.slick" %% "slick" % "3.1.1.1"
-"com.typesafe.slick" %% "slick-hikaricp" % "3.1.1.1"
+"com.typesafe.slick" %% "slick" % "3.1.1.2"
+"com.typesafe.slick" %% "slick-hikaricp" % "3.1.1.2"
 ```
-*3.1.1.1* is the patched version of the *3.1.1* release. The patched version needs to be higher than the original, otherwise it might get evicted in favor of the original slick library.
+*3.1.1.2* is the patched version of the *3.1.1* release. The patched version needs to be higher than the original, otherwise it might get evicted in favor of the original slick library.
 
 The original license still applies: Licensing conditions (BSD-style) can be found in LICENSE.txt.
 

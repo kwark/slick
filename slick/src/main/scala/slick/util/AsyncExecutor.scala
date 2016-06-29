@@ -4,7 +4,7 @@ import java.io.Closeable
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicInteger
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 /** A connection pool for asynchronous execution of blocking I/O actions.
   * This is used for the asynchronous query execution API on top of blocking back-ends like JDBC. */
@@ -52,13 +52,7 @@ object AsyncExecutor extends Logging {
         val queue: BlockingQueue[Runnable] = queueSize match {
           case 0 => new SynchronousQueue[Runnable]
           case -1 => new LinkedBlockingQueue[Runnable]
-          case n =>
-            new ManagedArrayBlockingQueue[Runnable](maxConnections, n) {
-              override protected[this] def priority(item: Runnable): Priority = item match {
-                case pr: PrioritizedRunnable => pr.priority
-                case _ => LowPriority
-              }
-            }
+          case n => new ManagedArrayBlockingQueue(maxConnections, n).asInstanceOf[BlockingQueue[Runnable]]
         }
         val tf = new DaemonThreadFactory(name + "-")
         executor = new ThreadPoolExecutor(numThreads, numThreads, 1, TimeUnit.MINUTES, queue, tf) {
@@ -69,7 +63,7 @@ object AsyncExecutor extends Logging {
             */
           override def beforeExecute(t: Thread, r: Runnable): Unit = {
             (r, queue) match {
-              case (pr: PrioritizedRunnable, q: ManagedArrayBlockingQueue[Runnable]) if pr.priority != HighPriority => q.increaseInUseCount()
+              case (pr: PrioritizedRunnable, q: ManagedArrayBlockingQueue[Runnable]) if pr.priority != WithConnection => q.increaseInUseCount(pr)
               case _ =>
             }
             super.beforeExecute(t, r)
@@ -82,8 +76,8 @@ object AsyncExecutor extends Logging {
             super.afterExecute(r, t)
             (r, queue) match {
               case (pr: PrioritizedRunnable, q: ManagedArrayBlockingQueue[Runnable]) =>
-                if (pr.connectionReleased && pr.priority != HighPriority) q.decreaseInUseCount()
-                q.resetInUseCountThreadLocal()
+                if (pr.connectionReleased && pr.priority != WithConnection) q.decreaseInUseCount()
+                pr.inUseCounterSet = false
               case _ =>
             }
           }
@@ -93,7 +87,23 @@ object AsyncExecutor extends Logging {
           executor.shutdownNow()
           throw new IllegalStateException("Cannot initialize ExecutionContext; AsyncExecutor shut down during initialization")
         }
-        ExecutionContext.fromExecutorService(executor, loggingReporter)
+        new ExecutionContextExecutor {
+          override def reportFailure(t: Throwable): Unit = loggingReporter(t)
+
+          override def execute(command: Runnable): Unit = {
+            if (command.isInstanceOf[PrioritizedRunnable]) {
+              executor.execute(command)
+            } else {
+              executor.execute(new PrioritizedRunnable {
+
+                override val priority: Priority = WithConnection
+
+                override def run(): Unit = command.run()
+              })
+            }
+          }
+        }
+
       }
       def close(): Unit = if(state.getAndSet(3) == 2) {
         executor.shutdownNow()
@@ -108,15 +118,19 @@ object AsyncExecutor extends Logging {
     apply(name, 20, 1000)
 
   sealed trait Priority
-  case object LowPriority extends Priority
-  case object MediumPriority extends Priority
-  case object HighPriority extends Priority
-
-
+  /** Fresh is used for database actions that are scheduled/queued for the first time. */
+  case object Fresh extends Priority
+  /** Continuation is used for database actions that are a continuation of some previously executed actions */
+  case object Continuation extends Priority
+  /** WithContinuation is used for database actions that already have a JDBC connection associated. */
+  case object WithConnection extends Priority
 
   trait PrioritizedRunnable extends Runnable {
     def priority: Priority
-    @volatile var connectionReleased = false
+    /** true if the JDBC connection was released */
+    var connectionReleased = false
+    /** true if the inUseCounter of the ManagedArrayBlockQueue was already incremented */
+    var inUseCounterSet = false
   }
 
   private class DaemonThreadFactory(namePrefix: String) extends ThreadFactory {

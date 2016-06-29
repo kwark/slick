@@ -1,6 +1,6 @@
 package slick.backend
 
-import slick.util.AsyncExecutor.{Priority, MediumPriority, LowPriority, HighPriority}
+import slick.util.AsyncExecutor.{Priority, WithConnection, Continuation, Fresh}
 
 import scala.language.existentials
 
@@ -374,9 +374,9 @@ trait DatabaseComponent { self =>
     private[DatabaseComponent] var currentSession: Session = null
 
     def priority(highPriority: Boolean): Priority = {
-      if (currentSession != null) HighPriority
-      else if (highPriority) MediumPriority
-      else LowPriority
+      if (currentSession != null) WithConnection
+      else if (highPriority) Continuation
+      else Fresh
     }
 
     /** Used for the sequence counter in Action debug output. This variable is volatile because it
